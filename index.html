@@ -10,7 +10,7 @@
   label { display: block; margin-top: 12px; font-weight: bold; }
   input { font-size: 16px; padding: 6px; }
   button { font-size: 16px; padding: 6px 12px; }
-  form button { margin-top: 16px; }
+  .buttons button { margin-top: 16px; margin-right: 8px; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid #999; padding: 6px; text-align: left; }
   .error { color: #b00020; }
@@ -21,18 +21,22 @@
 
 <h1>Workout Log</h1>
 <nav>
-  <a href="#log">Log Workout</a>
-  <a href="#history">History</a>
+  <a href="#log" title="Save a new workout">Log Workout</a>
+  <a href="#history" title="Review, and delete, your saved workouts">History</a>
 </nav>
 
 <section id="log">
   <h2>Log Workout</h2>
-  <p>Record what you did so you can look back at your progress. Saved workouts show up on the History page.</p>
+  <p>Record what you did so you can look back at your progress. Logging takes about a minute, and nothing is saved until you press Save Workout.</p>
+  <details>
+    <summary>What do sets, reps, and weight mean?</summary>
+    <p>A set is one round of an exercise. Reps is how many times you did it in that set. Weight is how heavy it was, in pounds. For exercises with no added weight, enter 0.</p>
+  </details>
   <form id="form">
     <label for="date">Date</label>
     <input id="date" type="date">
 
-    <label for="exercise">Exercise (for example: Squat)</label>
+    <label for="exercise">Exercise</label>
     <input id="exercise" type="text">
 
     <label for="sets">Sets</label>
@@ -44,14 +48,19 @@
     <label for="weight">Weight (lb)</label>
     <input id="weight" type="number">
 
-    <button type="submit">Save Workout</button>
+    <div class="buttons">
+      <button type="submit">Save Workout</button>
+      <button type="button" id="fillLast">Fill in from my last workout</button>
+    </div>
   </form>
   <p id="message" role="status"></p>
+  <p>Next step: open <a href="#history">History</a> to review your saved workouts.</p>
 </section>
 
 <section id="history">
   <h2>History</h2>
-  <p>Your saved workouts, newest first. Deleting is permanent, so you will be asked to confirm.</p>
+  <p>Your saved workouts, newest first. Click Delete to remove one. You will be asked to confirm, and you can undo right after, until you leave this page.</p>
+  <p id="undo" role="status" style="display:none">Workout deleted. <button id="undoBtn">Undo</button></p>
   <table>
     <thead>
       <tr>
@@ -60,8 +69,9 @@
     </thead>
     <tbody id="rows"></tbody>
   </table>
-  <p id="empty">No workouts yet. Go to Log Workout to save one.</p>
+  <p id="empty">No workouts yet. Go to <a href="#log">Log Workout</a> to save one.</p>
   <p id="timing" role="status"></p>
+  <p>Want to try the app first? Add sample workouts to see how the list works. You can remove them any time.</p>
   <p>
     <button id="seed">Add 500 sample workouts</button>
     <button id="unseed">Remove sample workouts</button>
@@ -79,17 +89,23 @@ function save() {
   localStorage.setItem(KEY, JSON.stringify(workouts));
 }
 var workouts = load();
+var lastDeleted = null;
 
 function $(id) { return document.getElementById(id); }
 function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-function today() {
-  var d = new Date();
+function isoDate(d) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
+function today() { return isoDate(new Date()); }
 function describe(w) {
   return w.exercise + ", " + w.sets + " sets of " + w.reps + " at " + w.weight + " lb on " + w.date;
+}
+function newestFirst() {
+  return workouts.slice().reverse().sort(function (a, b) {
+    return a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
+  });
 }
 
 // ----- Log Workout -----
@@ -125,12 +141,28 @@ $("form").addEventListener("submit", function (e) {
   msg.textContent = "Workout saved";
 });
 
+// A second way to log: start from your most recent workout, then change what you need.
+$("fillLast").addEventListener("click", function () {
+  var msg = $("message");
+  if (!workouts.length) {
+    msg.className = "error";
+    msg.textContent = "No saved workouts yet, so there is nothing to copy.";
+    return;
+  }
+  var last = newestFirst()[0];
+  $("date").value = today();
+  $("exercise").value = last.exercise;
+  $("sets").value = last.sets;
+  $("reps").value = last.reps;
+  $("weight").value = last.weight;
+  msg.className = "ok";
+  msg.textContent = "Filled in from your last workout. Change anything you like, then press Save Workout.";
+});
+
 // ----- History -----
 function showHistory(label) {
   var start = performance.now();
-  var list = workouts.slice().reverse().sort(function (a, b) {
-    return a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
-  });
+  var list = newestFirst();
   var html = "";
   list.forEach(function (w) {
     html += "<tr><td>" + esc(w.date) + "</td><td>" + esc(w.exercise) + "</td><td>" + w.sets +
@@ -148,11 +180,21 @@ $("rows").addEventListener("click", function (e) {
   if (!id) return;
   var w = workouts.filter(function (x) { return String(x.id) === id; })[0];
   if (!w) return;
-  if (!confirm("Delete this workout?\n\n" + describe(w) + "\n\nThis cannot be undone.")) return;
-  var start = performance.now();
+  if (!confirm("Delete this workout?\n\n" + describe(w) + "\n\nYou can undo right after deleting, until you leave the History page.")) return;
   workouts = workouts.filter(function (x) { return String(x.id) !== id; });
   save();
+  lastDeleted = w;
   showHistory("Deleted. List updated, now showing");
+  $("undo").style.display = "block";
+});
+
+$("undoBtn").addEventListener("click", function () {
+  if (!lastDeleted) return;
+  workouts.push(lastDeleted);
+  lastDeleted = null;
+  save();
+  $("undo").style.display = "none";
+  showHistory("Restored. List updated, now showing");
 });
 
 // ----- Sample data for testing -----
@@ -160,13 +202,13 @@ $("seed").addEventListener("click", function () {
   var names = ["Squat", "Bench Press", "Deadlift", "Overhead Press", "Barbell Row"];
   for (var i = 0; i < 500; i++) {
     var d = new Date(Date.now() - i * 86400000);
-    var iso = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-    workouts.push({ id: Date.now() + i + Math.random(), sample: true, date: iso, exercise: names[i % 5], sets: 3, reps: 8, weight: 100 + (i % 10) * 5 });
+    workouts.push({ id: Date.now() + i + Math.random(), sample: true, date: isoDate(d), exercise: names[i % 5], sets: 3, reps: 8, weight: 100 + (i % 10) * 5 });
   }
   save();
   showHistory("Displayed");
 });
 $("unseed").addEventListener("click", function () {
+  if (!confirm("Remove all sample workouts?\n\nYour own workouts will be kept.")) return;
   workouts = workouts.filter(function (w) { return !w.sample; });
   save();
   showHistory("Displayed");
@@ -177,6 +219,8 @@ function route() {
   var onHistory = location.hash === "#history";
   $("log").style.display = onHistory ? "none" : "block";
   $("history").style.display = onHistory ? "block" : "none";
+  lastDeleted = null;
+  $("undo").style.display = "none";
   if (onHistory) showHistory("Opened and displayed");
 }
 window.addEventListener("hashchange", route);
