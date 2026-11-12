@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workout Log</title>
+<style>
+  body { font-family: Arial, sans-serif; font-size: 16px; max-width: 800px; margin: 20px auto; padding: 0 16px; }
+  nav a { margin-right: 16px; }
+  label { display: block; margin-top: 12px; font-weight: bold; }
+  input { font-size: 16px; padding: 6px; }
+  button { font-size: 16px; padding: 6px 12px; }
+  form button { margin-top: 16px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #999; padding: 6px; text-align: left; }
+  .error { color: #b00020; }
+  .ok { color: #006400; }
+</style>
+</head>
+<body>
+
+<h1>Workout Log</h1>
+<nav>
+  <a href="#log">Log Workout</a>
+  <a href="#history">History</a>
+</nav>
+
+<section id="log">
+  <h2>Log Workout</h2>
+  <p>Record what you did so you can look back at your progress. Saved workouts show up on the History page.</p>
+  <form id="form">
+    <label for="date">Date</label>
+    <input id="date" type="date">
+
+    <label for="exercise">Exercise (for example: Squat)</label>
+    <input id="exercise" type="text">
+
+    <label for="sets">Sets</label>
+    <input id="sets" type="number">
+
+    <label for="reps">Reps</label>
+    <input id="reps" type="number">
+
+    <label for="weight">Weight (lb)</label>
+    <input id="weight" type="number">
+
+    <button type="submit">Save Workout</button>
+  </form>
+  <p id="message" role="status"></p>
+</section>
+
+<section id="history">
+  <h2>History</h2>
+  <p>Your saved workouts, newest first. Deleting is permanent, so you will be asked to confirm.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th><th>Exercise</th><th>Sets</th><th>Reps</th><th>Weight (lb)</th><th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p id="empty">No workouts yet. Go to Log Workout to save one.</p>
+  <p id="timing" role="status"></p>
+  <p>
+    <button id="seed">Add 500 sample workouts</button>
+    <button id="unseed">Remove sample workouts</button>
+  </p>
+</section>
+
+<script>
+var KEY = "workouts";
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || []; }
+  catch (e) { return []; }
+}
+function save() {
+  localStorage.setItem(KEY, JSON.stringify(workouts));
+}
+var workouts = load();
+
+function $(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function today() {
+  var d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function describe(w) {
+  return w.exercise + ", " + w.sets + " sets of " + w.reps + " at " + w.weight + " lb on " + w.date;
+}
+
+// ----- Log Workout -----
+$("date").value = today();
+
+$("form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var msg = $("message");
+  var date = $("date").value;
+  var exercise = $("exercise").value.trim();
+  var sets = Number($("sets").value);
+  var reps = Number($("reps").value);
+  var weight = $("weight").value;
+
+  var problem = "";
+  if (!date) problem = "Enter a date.";
+  else if (!exercise) problem = "Enter an exercise name.";
+  else if (!Number.isInteger(sets) || sets < 1) problem = "Sets must be a whole number of 1 or more.";
+  else if (!Number.isInteger(reps) || reps < 1) problem = "Reps must be a whole number of 1 or more.";
+  else if (weight === "" || Number(weight) < 0) problem = "Weight must be 0 or more.";
+
+  if (problem) {
+    msg.className = "error";
+    msg.textContent = problem;
+    return;
+  }
+
+  workouts.push({ id: Date.now() + Math.random(), date: date, exercise: exercise, sets: sets, reps: reps, weight: Number(weight) });
+  save();
+  $("form").reset();
+  $("date").value = today();
+  msg.className = "ok";
+  msg.textContent = "Workout saved";
+});
+
+// ----- History -----
+function showHistory(label) {
+  var start = performance.now();
+  var list = workouts.slice().reverse().sort(function (a, b) {
+    return a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
+  });
+  var html = "";
+  list.forEach(function (w) {
+    html += "<tr><td>" + esc(w.date) + "</td><td>" + esc(w.exercise) + "</td><td>" + w.sets +
+            "</td><td>" + w.reps + "</td><td>" + w.weight + "</td>" +
+            '<td><button data-id="' + w.id + '">Delete</button></td></tr>';
+  });
+  $("rows").innerHTML = html;
+  $("empty").style.display = list.length ? "none" : "block";
+  var ms = (performance.now() - start).toFixed(1);
+  $("timing").textContent = label + " " + list.length + " workouts in " + ms + " ms.";
+}
+
+$("rows").addEventListener("click", function (e) {
+  var id = e.target.getAttribute("data-id");
+  if (!id) return;
+  var w = workouts.filter(function (x) { return String(x.id) === id; })[0];
+  if (!w) return;
+  if (!confirm("Delete this workout?\n\n" + describe(w) + "\n\nThis cannot be undone.")) return;
+  var start = performance.now();
+  workouts = workouts.filter(function (x) { return String(x.id) !== id; });
+  save();
+  showHistory("Deleted. List updated, now showing");
+});
+
+// ----- Sample data for testing -----
+$("seed").addEventListener("click", function () {
+  var names = ["Squat", "Bench Press", "Deadlift", "Overhead Press", "Barbell Row"];
+  for (var i = 0; i < 500; i++) {
+    var d = new Date(Date.now() - i * 86400000);
+    var iso = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    workouts.push({ id: Date.now() + i + Math.random(), sample: true, date: iso, exercise: names[i % 5], sets: 3, reps: 8, weight: 100 + (i % 10) * 5 });
+  }
+  save();
+  showHistory("Displayed");
+});
+$("unseed").addEventListener("click", function () {
+  workouts = workouts.filter(function (w) { return !w.sample; });
+  save();
+  showHistory("Displayed");
+});
+
+// ----- Show one page at a time -----
+function route() {
+  var onHistory = location.hash === "#history";
+  $("log").style.display = onHistory ? "none" : "block";
+  $("history").style.display = onHistory ? "block" : "none";
+  if (onHistory) showHistory("Opened and displayed");
+}
+window.addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>
